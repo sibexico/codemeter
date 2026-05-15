@@ -1,0 +1,99 @@
+name: Release Binaries
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-linux-gnu
+          - arch: arm64
+            target: aarch64-linux-gnu
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+
+      - name: Build Linux binary
+        run: |
+          mkdir -p dist
+          zig cc -std=c23 -O2 -Wall -Wextra -pedantic codemeter.c \
+            -target ${{ matrix.target }} \
+            -o dist/codemeter-linux-${{ matrix.arch }}
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codemeter-linux-${{ matrix.arch }}
+          path: dist/codemeter-linux-${{ matrix.arch }}
+
+  build-windows:
+    name: Build Windows (${{ matrix.arch }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-windows-gnu
+          - arch: arm64
+            target: aarch64-windows-gnu
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+
+      - name: Build Windows binary
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          zig cc -std=c23 -O2 -Wall -Wextra -pedantic codemeter.c `
+            -target ${{ matrix.target }} `
+            -o dist/codemeter-windows-${{ matrix.arch }}.exe
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codemeter-windows-${{ matrix.arch }}
+          path: dist/codemeter-windows-${{ matrix.arch }}.exe
+
+  publish-release-assets:
+    name: Upload Release Assets
+    runs-on: ubuntu-latest
+    needs:
+      - build-linux
+      - build-windows
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: codemeter-*
+          merge-multiple: true
+          path: dist
+
+      - name: Publish assets to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/codemeter-linux-x86_64
+            dist/codemeter-linux-arm64
+            dist/codemeter-windows-x86_64.exe
+            dist/codemeter-windows-arm64.exe
