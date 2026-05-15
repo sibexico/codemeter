@@ -9,27 +9,66 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build ${{ matrix.os_name }} (${{ matrix.arch }})
+  build-linux:
+    name: Build Linux (${{ matrix.arch }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os_name: linux
-            arch: x86_64
+          - arch: x86_64
             compiler: gcc
             output: codemeter-linux-x86_64
-          - os_name: linux
-            arch: arm64
+          - arch: arm64
             compiler: aarch64-linux-gnu-gcc
             output: codemeter-linux-arm64
-          - os_name: windows
-            arch: x86_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux GCC toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc \
+            gcc-aarch64-linux-gnu
+
+      - name: Verify compiler exists
+        run: |
+          command -v ${{ matrix.compiler }}
+          ${{ matrix.compiler }} --version
+
+      - name: Build binary
+        run: |
+          mkdir -p dist
+          CSTD=-std=c23
+          if ! ${{ matrix.compiler }} -std=c23 -x c - -fsyntax-only < /dev/null; then
+            CSTD=-std=c2x
+          fi
+
+          ${{ matrix.compiler }} $CSTD -O2 -Wall -Wextra -pedantic codemeter.c \
+            -o dist/${{ matrix.output }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: dist/${{ matrix.output }}
+
+  build-windows:
+    name: Build Windows (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            mingw_arch: x86_64
             compiler: x86_64-w64-mingw32-gcc
             output: codemeter-windows-x86_64.exe
-          - os_name: windows
-            arch: arm64
+          - arch: arm64
+            mingw_arch: aarch64
             compiler: aarch64-w64-mingw32-gcc
             output: codemeter-windows-arm64.exe
 
@@ -37,13 +76,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install GCC toolchains
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc \
-            gcc-aarch64-linux-gnu \
-            mingw-w64
+      - name: Setup MinGW-w64 GCC toolchain
+        uses: messense/mingw-w64-cross-toolchain@v1
+        with:
+          arch: ${{ matrix.mingw_arch }}
 
       - name: Verify compiler exists
         run: |
@@ -71,7 +107,8 @@ jobs:
     name: Upload Release Assets
     runs-on: ubuntu-latest
     needs:
-      - build
+      - build-linux
+      - build-windows
 
     steps:
       - name: Download build artifacts
