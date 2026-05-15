@@ -53,7 +53,12 @@ jobs:
       - name: Build binary
         run: |
           mkdir -p dist
-          ${{ matrix.compiler }} -std=c23 -O2 -Wall -Wextra -pedantic codemeter.c \
+          CSTD=-std=c23
+          if ! ${{ matrix.compiler }} -std=c23 -x c - -fsyntax-only < /dev/null; then
+            CSTD=-std=c2x
+          fi
+
+          ${{ matrix.compiler }} $CSTD -O2 -Wall -Wextra -pedantic codemeter.c \
             -o dist/${{ matrix.output }}
 
       - name: Upload artifact
