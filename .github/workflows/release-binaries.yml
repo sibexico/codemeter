@@ -76,10 +76,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup MinGW-w64 GCC toolchain
-        uses: messense/mingw-w64-cross-toolchain@v1
-        with:
-          arch: ${{ matrix.mingw_arch }}
+      - name: Install MinGW-w64 GCC toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            mingw-w64 \
+            gcc-mingw-w64-x86-64 \
+            gcc-mingw-w64-aarch64
 
       - name: Verify compiler exists
         run: |
