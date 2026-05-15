@@ -9,109 +9,143 @@ permissions:
   contents: write
 
 jobs:
-  build-linux:
-    name: Build Linux (${{ matrix.arch }})
+  build-linux-x86_64:
+    name: Build Linux (x86_64)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            compiler: gcc
-            output: codemeter-linux-x86_64
-          - arch: arm64
-            compiler: aarch64-linux-gnu-gcc
-            output: codemeter-linux-arm64
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Linux GCC toolchains
+      - name: Verify GCC exists
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc \
-            gcc-aarch64-linux-gnu
-
-      - name: Verify compiler exists
-        run: |
-          command -v ${{ matrix.compiler }}
-          ${{ matrix.compiler }} --version
+          command -v gcc
+          gcc --version
 
       - name: Build binary
         run: |
           mkdir -p dist
           CSTD=-std=c23
-          if ! ${{ matrix.compiler }} -std=c23 -x c - -fsyntax-only < /dev/null; then
+          if ! gcc -std=c23 -x c - -fsyntax-only < /dev/null; then
             CSTD=-std=c2x
           fi
 
-          ${{ matrix.compiler }} $CSTD -O2 -Wall -Wextra -pedantic codemeter.c \
-            -o dist/${{ matrix.output }}
+          gcc $CSTD -O2 -Wall -Wextra -pedantic codemeter.c \
+            -o dist/codemeter-linux-x86_64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.output }}
-          path: dist/${{ matrix.output }}
+          name: codemeter-linux-x86_64
+          path: dist/codemeter-linux-x86_64
 
-  build-windows:
-    name: Build Windows (${{ matrix.arch }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            mingw_arch: x86_64
-            compiler: x86_64-w64-mingw32-gcc
-            output: codemeter-windows-x86_64.exe
-          - arch: arm64
-            mingw_arch: aarch64
-            compiler: aarch64-w64-mingw32-gcc
-            output: codemeter-windows-arm64.exe
+  build-linux-arm64:
+    name: Build Linux (arm64)
+    runs-on: ubuntu-24.04-arm
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install MinGW-w64 GCC toolchains
+      - name: Verify GCC exists
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            mingw-w64 \
-            gcc-mingw-w64-x86-64 \
-            gcc-mingw-w64-aarch64
-
-      - name: Verify compiler exists
-        run: |
-          command -v ${{ matrix.compiler }}
-          ${{ matrix.compiler }} --version
+          command -v gcc
+          gcc --version
 
       - name: Build binary
         run: |
           mkdir -p dist
           CSTD=-std=c23
-          if ! ${{ matrix.compiler }} -std=c23 -x c - -fsyntax-only < /dev/null; then
+          if ! gcc -std=c23 -x c - -fsyntax-only < /dev/null; then
             CSTD=-std=c2x
           fi
 
-          ${{ matrix.compiler }} $CSTD -O2 -Wall -Wextra -pedantic codemeter.c \
-            -o dist/${{ matrix.output }}
+          gcc $CSTD -O2 -Wall -Wextra -pedantic codemeter.c \
+            -o dist/codemeter-linux-arm64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.output }}
-          path: dist/${{ matrix.output }}
+          name: codemeter-linux-arm64
+          path: dist/codemeter-linux-arm64
+
+  build-windows-x86_64:
+    name: Build Windows (x86_64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2 with GCC
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+
+      - name: Build binary
+        shell: msys2 {0}
+        run: |
+          mkdir -p dist
+          CSTD=-std=c23
+          if ! gcc -std=c23 -x c - -fsyntax-only < /dev/null; then
+            CSTD=-std=c2x
+          fi
+
+          gcc $CSTD -O2 -Wall -Wextra -pedantic codemeter.c \
+            -o dist/codemeter-windows-x86_64.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codemeter-windows-x86_64.exe
+          path: dist/codemeter-windows-x86_64.exe
+
+  build-windows-arm64:
+    name: Build Windows (arm64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build binary (native arm64)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe not found"
+          }
+
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
+          if ([string]::IsNullOrWhiteSpace($vsPath)) {
+            throw "Visual Studio ARM64 toolchain not found on runner"
+          }
+
+          $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvarsall.bat"
+          if (-not (Test-Path $vcvars)) {
+            throw "vcvarsall.bat not found"
+          }
+
+          cmd /c "\"$vcvars\" x64_arm64 && cl /nologo /std:clatest /O2 /W4 codemeter.c /Fe:dist\\codemeter-windows-arm64.exe"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codemeter-windows-arm64.exe
+          path: dist/codemeter-windows-arm64.exe
 
   publish-release-assets:
     name: Upload Release Assets
     runs-on: ubuntu-latest
     needs:
-      - build-linux
-      - build-windows
+      - build-linux-x86_64
+      - build-linux-arm64
+      - build-windows-x86_64
+      - build-windows-arm64
 
     steps:
       - name: Download build artifacts
