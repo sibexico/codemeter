@@ -130,7 +130,18 @@ jobs:
             throw "vcvarsall.bat not found"
           }
 
-          cmd /c "\"$vcvars\" x64_arm64 && cl /nologo /std:clatest /O2 /W4 codemeter.c /Fe:dist\\codemeter-windows-arm64.exe"
+          $script = @"
+@echo off
+call "$vcvars" x64_arm64
+if errorlevel 1 exit /b 1
+cl /nologo /std:clatest /O2 /W4 codemeter.c /Fe:dist\codemeter-windows-arm64.exe
+"@
+
+          Set-Content -Path build-arm64.cmd -Value $script -Encoding ascii
+          cmd /c build-arm64.cmd
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
